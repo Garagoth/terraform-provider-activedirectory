@@ -1,3 +1,23 @@
+## Unreleased (~August 2023, Garagoth)
+
+ENHANCEMENTS:
+* Added scope and category to group
+
+NOTES:
+* Updated dependencies a bit
+* Removed 386 from goreleaser (maxint issues during compilation)
+* Updated mockery
+
+## Unreleased (~2021/2022, MrJacek)
+
+FEATURES:
+* **New Resource:** `activedirectory_group`
+
+ENHANCEMENTS:
+* Added go cache directory (MrJacek)
+* Fixed vendor tests? (MrJacek)
+* Added examples and more tests
+
 ## 0.0.7 (January 18, 2020)
 
 BUG FIXES:
