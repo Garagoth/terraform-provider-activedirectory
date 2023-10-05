@@ -7,6 +7,7 @@ NOTES:
 * Updated dependencies a bit
 * Removed 386 from goreleaser (maxint issues during compilation)
 * Updated mockery
+* Bumped Go to 1.18
 
 ## Unreleased (~2021/2022, MrJacek)
 
@@ -17,6 +18,9 @@ ENHANCEMENTS:
 * Added go cache directory (MrJacek)
 * Fixed vendor tests? (MrJacek)
 * Added examples and more tests
+
+NOTES:
+* Bumped Go to 1.15
 
 ## 0.0.7 (January 18, 2020)
 
