@@ -43,4 +43,15 @@ resource "activedirectory_ou" "test_ou" {
   base_ou        = "OU=Test,CN=Computers,DC=example,DC=org" # can be updated
   description    = "terraform sample ou"                    # can be updated
 }
+
+# Add group to Active Directory
+resource "activedirectory_group" "test_group" {
+  name = "TerraformGroup"
+  base_ou = "OU=Test,CN=Computers,DC=example,DC=org"
+  description = "terraform sample group"
+  scope = "domainlocal"
+  category = "security"
+  member = ["jdoe", "ckent"]
+  ignore_members_unknown_by_terraform = false
+}
 ```

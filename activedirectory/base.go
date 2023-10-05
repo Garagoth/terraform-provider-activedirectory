@@ -41,7 +41,7 @@ type APIInterface interface {
 	getGroup(name, baseOU, userBase string, member []string, ignoreMembersUnknownByTerraform bool) (*Group, error)
 	getGroupMemberNames(groupDn, userBase string) ([]string, error)
 	getGroupMemberDNByName(names []string, userBase string) ([]string, error)
-	createGroup(name, baseOU, description, userBase string, member []string, ignoreMembersUnknownByTerraform bool) error
+	createGroup(name string, baseOU string, description string, userBase string, member []string, ignoreMembersUnknownByTerraform bool, scope string, category string) error
 	updateGroupDescription(cn, baseOU, description string) error
 	updateGroupMembers(cn, baseOU, userBase string, oldMembers, newMembers []string, ignoreMembersUnknownByTerraform bool) error
 	deleteGroup(cn string) error
@@ -79,7 +79,6 @@ func (api *API) connect() error {
 
 	client, err := ldap.Dial("tcp", fmt.Sprintf("%s:%d", api.host, api.port))
 	if err != nil {
-
 
 		return fmt.Errorf("connect - failed to connect: %s", err)
 	}

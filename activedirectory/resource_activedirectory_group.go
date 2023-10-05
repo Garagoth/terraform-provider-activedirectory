@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	log "github.com/sirupsen/logrus"
 	"strings"
 )
 
-// resourceADGroupObject is the main function for ad ou terraform resource
+// resourceADGroupObject is the main function for ad group terraform resource
 func resourceADGroupObject() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceADGroupObjectCreate,
@@ -68,17 +69,30 @@ func resourceADGroupObject() *schema.Resource {
 				Optional: true,
 				Default:  nil,
 			},
+			"scope": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      "global",
+				ForceNew:     true,
+				ValidateFunc: validation.StringInSlice([]string{"global", "domainlocal", "universal"}, false),
+				Description:  "The group's scope. Can be one of `global`, `domainlocal`, or `universal` (case sensitive).",
+			},
+			"category": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      "security",
+				ForceNew:     true,
+				ValidateFunc: validation.StringInSlice([]string{"distribution", "security"}, false),
+				Description:  "The group's category. Can be one of `distribution` or `security` (case sensitive).",
+			},
 		},
 	}
 }
-
 
 // resourceADGroupObjectCreate is 'create' part of terraform CRUD functions for AD provider
 func resourceADGroupObjectCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	log.Infof("Creating AD Group object")
 	api := meta.(APIInterface)
-
-	var diags diag.Diagnostics
 
 	members := make([]string, 0)
 	for _, m := range d.Get("member").(*schema.Set).List() {
@@ -88,14 +102,13 @@ func resourceADGroupObjectCreate(ctx context.Context, d *schema.ResourceData, me
 	}
 	log.Infof("Member count from config %d", len(members))
 	if err := api.createGroup(d.Get("name").(string), d.Get("base_ou").(string),
-		d.Get("description").(string), d.Get("user_base").(string), members, d.Get("ignore_members_unknown_by_terraform").(bool)); err != nil {
-		return diag.Errorf("resourceADGroupObjectCreate - create ou - %s", err)
-
+		d.Get("description").(string), d.Get("user_base").(string), members, d.Get("ignore_members_unknown_by_terraform").(bool),
+		d.Get("scope").(string), d.Get("category").(string)); err != nil {
+		return diag.Errorf("resourceADGroupObjectCreate - create group - %s", err)
 	}
 
 	d.SetId(strings.ToLower(fmt.Sprintf("ou=%s,%s", d.Get("name").(string), d.Get("base_ou").(string))))
-	resourceADGroupObjectRead(ctx, d, meta)
-	return diags
+	return resourceADGroupObjectRead(ctx, d, meta)
 
 }
 
@@ -144,6 +157,12 @@ func resourceADGroupObjectRead(ctx context.Context, d *schema.ResourceData, meta
 	if err := d.Set("member", group.member); err != nil {
 		return diag.Errorf("resourceADGroupObjectRead - set member - failed to set group member to %s: %s", group.member, err)
 	}
+	if err := d.Set("scope", fromGroupTypeStr(group.groupType)[0]); err != nil {
+		return diag.Errorf("resourceADGroupObjectRead - set scope - failed to set group scope to %s: %s", group.groupType, err)
+	}
+	if err := d.Set("category", fromGroupTypeStr(group.groupType)[1]); err != nil {
+		return diag.Errorf("resourceADGroupObjectRead - set category - failed to set group category to %s: %s", group.groupType, err)
+	}
 
 	d.SetId(strings.ToLower(group.dn))
 
@@ -155,8 +174,6 @@ func resourceADGroupObjectUpdate(ctx context.Context, d *schema.ResourceData, me
 	log.Infof("Updating AD Group object")
 
 	api := meta.(APIInterface)
-
-	var diags diag.Diagnostics
 
 	oldOU, newOU := d.GetChange("base_ou")
 	oldName, newName := d.GetChange("name")
@@ -208,11 +225,14 @@ func resourceADGroupObjectUpdate(ctx context.Context, d *schema.ResourceData, me
 		}
 	}
 
+	if d.HasChanges("scope", "category") {
+		return diag.Errorf("resourceADGroupObjectUpdate - update scope or category - requires group recreate, cannot update in-place")
+	}
+
 	d.Partial(false)
 	d.SetId(strings.ToLower(fmt.Sprintf("cn=%s,%s", newName.(string), newOU.(string))))
 
-	resourceADGroupObjectRead(ctx, d, meta)
-	return diags
+	return resourceADGroupObjectRead(ctx, d, meta)
 }
 
 // resourceADGroupObjectDelete is 'delete' part of terraform CRUD functions for ad provider

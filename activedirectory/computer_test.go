@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	mockldap "github.com/mrjacek/terraform-provider-activedirectory/mocks/github.com/go-ldap/ldap/v3"
 	"github.com/stretchr/testify/assert"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -21,16 +22,21 @@ func contains(s []string, e string) bool {
 }
 
 func createADComputerResult() *ldap.SearchResult {
-	attributes := []string{"cn", "description"}
+	attributes := map[string]func() string{
+		"cn":          func() string { return getRandomString(10) },
+		"description": func() string { return getRandomString(10) }}
 	return createADResult(1, attributes)
 }
 
 func TestGetComputer(t *testing.T) { // nolint:funlen // Test function
 	name := getRandomString(10)
-	attributes := []string{"description", "cn"}
+	attributes := map[string]func() string{
+		"cn":          func() string { return getRandomString(10) },
+		"description": func() string { return getRandomString(10) },
+	}
 
 	t.Run("getComputer - should forward errors from api.getObject", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -42,7 +48,7 @@ func TestGetComputer(t *testing.T) { // nolint:funlen // Test function
 	})
 
 	t.Run("getComputer - should return nil when no computer was found", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, &ldap.Error{Err: fmt.Errorf("not found"), ResultCode: 32})
 
 		api := &API{client: mockClient}
@@ -54,7 +60,7 @@ func TestGetComputer(t *testing.T) { // nolint:funlen // Test function
 	})
 
 	t.Run("getComputer - should return a computer object", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(1, attributes), nil)
 
 		api := &API{client: mockClient}
@@ -72,7 +78,7 @@ func TestGetComputer(t *testing.T) { // nolint:funlen // Test function
 				contains(sr.Attributes, "description")
 		}
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.MatchedBy(matchFunc)).Return(createADResult(1, attributes), nil)
 
 		api := &API{client: mockClient}
@@ -87,7 +93,7 @@ func TestGetComputer(t *testing.T) { // nolint:funlen // Test function
 			return strings.Contains(sr.Filter, "objectclass=computer")
 		}
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.MatchedBy(matchFunc)).Return(createADResult(1, attributes), nil)
 
 		api := &API{client: mockClient}
@@ -98,7 +104,7 @@ func TestGetComputer(t *testing.T) { // nolint:funlen // Test function
 	})
 
 	t.Run("getComputer - should error when more than one object were found", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(2, attributes), nil)
 
 		api := &API{client: mockClient}
@@ -111,7 +117,7 @@ func TestGetComputer(t *testing.T) { // nolint:funlen // Test function
 
 	t.Run("getComputer - should return computer object filled with search result data", func(t *testing.T) {
 		sr := createADComputerResult()
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 
 		api := &API{client: mockClient}
@@ -166,7 +172,7 @@ func TestCreateComputer(t *testing.T) {
 			return ret
 		}
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, nil)
 		mockClient.On("Add", mock.MatchedBy(matchFunc)).Return(nil)
 
@@ -177,7 +183,7 @@ func TestCreateComputer(t *testing.T) {
 	})
 
 	t.Run("createComputer - should forward error from api.getComputer", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -190,7 +196,7 @@ func TestCreateComputer(t *testing.T) {
 	t.Run("createComputer - should error when a computer with the same name in another OU exists", func(t *testing.T) {
 		sr := createADComputerResult()
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 
 		api := &API{client: mockClient}
@@ -204,7 +210,7 @@ func TestCreateComputer(t *testing.T) {
 		sr := createADComputerResult()
 		sr.Entries[0].DN = fmt.Sprintf("cn=%s,%s", sr.Entries[0].GetAttributeValue("cn"), baseOU)
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		matchFunc := func(sr *ldap.ModifyRequest) bool {
 			for _, elem := range sr.Changes {
@@ -230,7 +236,7 @@ func TestUpdateComputerOU(t *testing.T) {
 	newOU := fmt.Sprintf("ou=%s,%s", getRandomString(5), ou)
 
 	t.Run("updateComputerOU - should forward error from api.getComputer", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -239,7 +245,7 @@ func TestUpdateComputerOU(t *testing.T) {
 	})
 
 	t.Run("updateComputerOU - should error when computer object not exists", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, nil)
 
 		api := &API{client: mockClient}
@@ -250,7 +256,7 @@ func TestUpdateComputerOU(t *testing.T) {
 	t.Run("updateComputerOU - should forward error from ldap.Client.ModifyDN", func(t *testing.T) {
 		sr := createADComputerResult()
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -264,7 +270,7 @@ func TestUpdateComputerOU(t *testing.T) {
 		cn := sr.Entries[0].GetAttributeValue("cn")
 		sr.Entries[0].DN = fmt.Sprintf("CN=%s,%s", cn, newOU)
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -277,7 +283,7 @@ func TestUpdateComputerOU(t *testing.T) {
 		sr := createADComputerResult()
 		cn := sr.Entries[0].GetAttributeValue("cn")
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(nil)
 
@@ -295,7 +301,7 @@ func TestUpdateComputerOU(t *testing.T) {
 				sr.NewSuperior == newOU && sr.NewRDN == fmt.Sprintf("cn=%s", cn)
 		}
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		mockClient.On("ModifyDN", mock.MatchedBy(matchFunc)).Return(nil)
 
@@ -310,7 +316,7 @@ func TestUpdateComputerDescription(t *testing.T) {
 		sr := createADComputerResult()
 		cn := sr.Entries[0].GetAttributeValue("cn")
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		mockClient.On("Modify", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -324,7 +330,7 @@ func TestUpdateComputerDescription(t *testing.T) {
 		sr := createADComputerResult()
 		cn := sr.Entries[0].GetAttributeValue("cn")
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		mockClient.On("Modify", mock.Anything).Return(nil)
 
@@ -347,7 +353,7 @@ func TestUpdateComputerDescription(t *testing.T) {
 			return false
 		}
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(sr, nil)
 		mockClient.On("Modify", mock.MatchedBy(matchFunc)).Return(nil)
 
@@ -361,7 +367,7 @@ func TestUpdateComputerDescription(t *testing.T) {
 
 func TestDeleteComputer(t *testing.T) {
 	t.Run("deleteComputer - should forward error from api.deleteObject", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -371,7 +377,7 @@ func TestDeleteComputer(t *testing.T) {
 	})
 
 	t.Run("deleteComputer - should return nil when object is deleted successfully", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, nil)
 		mockClient.On("Del", mock.Anything).Return(nil)
 

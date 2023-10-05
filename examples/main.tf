@@ -1,11 +1,21 @@
+terraform {
+  required_providers {
+    activedirectory = {
+      source  = "mrjacek/activedirectory"
+      version = "0.8.0"
+    }
+  }
+}
+
+
 provider "activedirectory" {
-  port = 389
-  use_tls = false
+  port           = 389
+  use_tls        = false
   no_cert_verify = true
-  host = var.ad_host
-  domain = var.ad_domain
-  user = var.ad_user
-  password = var.ad_password
+  host           = var.ad_host
+  domain         = var.ad_domain
+  user           = var.ad_user
+  password       = var.ad_password
 }
 
 variable "ad_user" {
@@ -25,7 +35,7 @@ variable "ad_base_ou" {
 }
 
 resource "activedirectory_ou" "test" {
-  name = "test"
-  base_ou = var.ad_base_ou
+  name        = "test"
+  base_ou     = var.ad_base_ou
   description = "Cos"
 }

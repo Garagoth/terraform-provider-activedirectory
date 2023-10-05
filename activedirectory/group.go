@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/go-ldap/ldap/v3"
 	log "github.com/sirupsen/logrus"
+	"strconv"
 	"strings"
 )
 
@@ -13,11 +14,12 @@ type Group struct {
 	dn          string
 	description string
 	member      []string
+	groupType   string
 }
 
 func (api *API) getGroup(name, baseOU, userBase string, member []string, ignoreMembersUnknownByTerraform bool) (*Group, error) {
 	log.Infof("Getting group %s in %s", name, baseOU)
-	attributes := []string{"name", "sAMAccaountName", "description"}
+	attributes := []string{"name", "sAMAccountName", "description", "groupType"}
 
 	// filter
 	filter := fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", name)
@@ -44,12 +46,12 @@ func (api *API) getGroup(name, baseOU, userBase string, member []string, ignoreM
 		return nil, fmt.Errorf("getGroup - failed to get group members %s in %s: %s", ret[0].dn, userBase, err)
 	}
 	membersMangedByTerraform := api.getMembersManagedByTerraform(membersFromLdap, member, ignoreMembersUnknownByTerraform)
-	description := getAttribute("description", ret[0])
 	return &Group{
 		name:        ret[0].attributes["name"][0],
 		dn:          ret[0].dn,
-		description: description,
+		description: getAttribute("description", ret[0]),
 		member:      membersMangedByTerraform,
+		groupType:   ret[0].attributes["groupType"][0],
 	}, nil
 }
 
@@ -63,7 +65,7 @@ func getAttribute(attrName string, ldapObject *Object) string {
 }
 
 func (api *API) getMembersManagedByTerraform(membersFromLdap []string, membersFromTerraform []string, ignoreMembersUnknownByTerraform bool) []string {
-	membersMangedByTerraform := append([]string(nil), membersFromTerraform...)
+	var membersMangedByTerraform []string
 	if ignoreMembersUnknownByTerraform {
 		for _, m := range membersFromLdap {
 			if stringInSlice(m, membersFromTerraform) {
@@ -71,11 +73,18 @@ func (api *API) getMembersManagedByTerraform(membersFromLdap []string, membersFr
 			}
 		}
 	} else {
+		//membersMangedByTerraform = append([]string(nil), membersFromTerraform...)
 		for _, m := range membersFromLdap {
-			if !stringInSlice(m, membersMangedByTerraform) {
+			if !stringInSlice(m, membersFromTerraform) {
 				membersMangedByTerraform = append(membersMangedByTerraform, m)
 			}
 		}
+		for _, m := range membersFromTerraform {
+			if stringInSlice(m, membersFromLdap) {
+				membersMangedByTerraform = append(membersMangedByTerraform, m)
+			}
+		}
+
 	}
 	return membersMangedByTerraform
 
@@ -106,8 +115,10 @@ func (api *API) getGroupMemberNames(groupDN, userBase string) ([]string, error) 
 	return members, nil
 }
 
-func (api *API) createGroup(name, baseOU, description, userBase string, member []string, ignoreMembersUnknownByTerraform bool) error {
-	log.Infof("Creating group %s in %s", name, baseOU)
+func (api *API) createGroup(name, baseOU, description, userBase string, member []string, ignoreMembersUnknownByTerraform bool, scope string, category string) error {
+	groupType := toGroupType(scope, category)
+
+	log.Infof("Creating group '%s' (%s %s => %s) in '%s'", name, scope, category, groupType, baseOU)
 	log.Infof("Creating group with members %s", member)
 	if userBase == "" {
 		userBase = api.getDomainDN()
@@ -117,8 +128,12 @@ func (api *API) createGroup(name, baseOU, description, userBase string, member [
 		return fmt.Errorf("createGroup - talking to active directory failed: %s", err)
 	}
 
-	// there is already an group object with the same name
+	// there is already a group object with the same name
 	if tmp != nil {
+		if tmp.groupType != groupType {
+			log.Infof("GroupType '%s' (%s) does not match desired '%s' (%s), must be recreated!", tmp.groupType, fromGroupTypeStr(tmp.groupType), groupType, fromGroupTypeStr(groupType))
+			return fmt.Errorf("groupType '%s' (%s) does not match desired '%s' (%s)", tmp.groupType, fromGroupTypeStr(tmp.groupType), groupType, fromGroupTypeStr(groupType))
+		}
 		if tmp.name == name && tmp.dn == fmt.Sprintf("cn=%s,%s", name, baseOU) {
 			log.Infof("Group object %s already exists, updating description", name)
 			return api.updateGroupDescription(name, baseOU, description)
@@ -140,7 +155,7 @@ func (api *API) createGroup(name, baseOU, description, userBase string, member [
 	attributes["cn"] = []string{name}
 	attributes["name"] = []string{name}
 	attributes["sAMAccountName"] = []string{name}
-	attributes["groupType"] = []string{"-2147483646"}
+	attributes["groupType"] = []string{groupType}
 	attributes["description"] = []string{description}
 	if len(memberDN) > 0 {
 		attributes["member"] = memberDN
@@ -191,6 +206,7 @@ func (api *API) updateGroupMembers(cn, baseOU, userBase string, oldMembers, newM
 		userBase = api.getDomainDN()
 	}
 	group, err := api.getGroup(cn, baseOU, userBase, oldMembers, ignoreMembersUnknownByTerraform)
+
 	if err != nil {
 		return fmt.Errorf("updateGroupMembers - getting group  cn=%s%s: %s", cn, baseOU, err)
 	}
@@ -364,4 +380,30 @@ func stringInSlice(a string, list []string) bool {
 		}
 	}
 	return false
+}
+
+func toGroupType(scope string, category string) string {
+	scopeMap := map[string]int64{"system_made": 1, "global": 2, "domainlocal": 4, "universal": 8}
+	categoryMap := map[string]int64{"distribution": 0, "security": 0x80000000}
+	val := scopeMap[scope] | categoryMap[category]
+	log.Debugf("toGroupType: %s %s => 0x%x", scope, category, val)
+	return strconv.FormatInt(int64(int32(val)), 10)
+}
+
+func fromGroupType(groupType int64) []string {
+	scopeMap := map[int64]string{1: "system_made", 2: "global", 4: "domainlocal", 5: "system_made+domainlocal", 8: "universal", 16: "APP_BASIC", 32: "APP_QUERY"}
+	categoryMap := map[int64]string{0: "distribution", 0x80000000: "security"}
+	scope := scopeMap[groupType&(2|4|8)]
+	category := categoryMap[groupType&0x80000000]
+	log.Debugf("fromGroupType: 0x%x => %s %s", groupType, scope, category)
+	return []string{scope, category}
+}
+
+func fromGroupTypeStr(groupType string) []string {
+	i, err := strconv.ParseInt(groupType, 10, 32)
+	if err != nil {
+		return []string{"", ""}
+	}
+	i = int64(uint64(int32(i)))
+	return fromGroupType(i)
 }

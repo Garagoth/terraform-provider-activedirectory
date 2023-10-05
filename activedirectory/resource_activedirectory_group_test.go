@@ -1,7 +1,9 @@
 package activedirectory
 
 import (
+	"encoding/json"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"strings"
 	"testing"
@@ -14,34 +16,58 @@ import (
 )
 
 // acceptance tests
-//func TestAccADGroup_basic_v2(t *testing.T) {
-//	baseOu := strings.ToLower(os.Getenv("AD_TEST_BASE_OU"))
-//	userBase := strings.ToLower(os.Getenv("AD_TEST_USER_BASE"))
-//	testUsersAMAccountName := strings.ToLower(os.Getenv("AD_TEST_USER_1_sAMAccountName"))
-//	name := strings.ToLower(fmt.Sprintf("testacc_%s", getRandomString(3)))
-//	description := getRandomString(10)
-//
-//	var ouObject OU
-//
-//	resource.Test(t, resource.TestCase{
-//		PreCheck:          func() { testAccPreCheckOU(t) },
-//		ProviderFactories: testAccProviderFactories,
-//		CheckDestroy:      testAccCheckADOUDestroy,
-//		Steps: []resource.TestStep{
-//			{
-//				Config: testAccResourceADOUTestData(baseOu, name, description),
-//				Check: resource.ComposeTestCheckFunc(
-//					testAccCheckADOUExists(ResourcesNameOrganizationUnit+".test", &ouObject),
-//					testAccCheckADOUAttributes(&ouObject, baseOu, name, description),
-//					resource.TestCheckResourceAttr(ResourcesNameOrganizationUnit+".test", "base_ou", baseOu),
-//					resource.TestCheckResourceAttr(ResourcesNameOrganizationUnit+".test", "name", name),
-//					resource.TestCheckResourceAttr(ResourcesNameOrganizationUnit+".test", "description", description),
-//					resource.TestCheckResourceAttr(ResourcesNameOrganizationUnit+".test", "id", dn),
-//				),
-//			},
-//		},
-//	})
-//}
+func TestAccADGroup_remove_manual_add_user(t *testing.T) {
+	baseOu := strings.ToLower(os.Getenv("AD_TEST_BASE_OU"))
+	userBase := strings.ToLower(os.Getenv("AD_TEST_USER_BASE"))
+	testUsersAMAccountName := strings.ToLower(os.Getenv("AD_TEST_USER_1_sAMAccountName"))
+	var users []string
+	users = append(users, testUsersAMAccountName)
+
+	name := "example-group"
+	description := "Opis"
+
+	var groupObject Group
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheckOU(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckADOUDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccResourceADGroupTestData(baseOu, name, description, userBase, users, false, "universal", "distribution"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
+					testAccCheckADGroupMembers(ResourcesNameGroup+".test", &groupObject, users),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "name", name),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "category", "distribution"),
+				),
+				//ExpectNonEmptyPlan: true,
+			},
+			{
+				//ExpectNonEmptyPlan: true,
+				PreConfig: testDeleteUserFromGroup(name, baseOu, userBase, users),
+				Config:    testAccResourceADGroupTestData(baseOu, name, description, userBase, users, false, "universal", "distribution"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
+					testAccCheckADGroupMembers(ResourcesNameGroup+".test", &groupObject, users),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "name", name),
+				),
+			},
+		},
+	})
+}
+
+func testDeleteUserFromGroup(name, baseOU, userBase string, users []string) func() {
+	return func() {
+		log.Info("!!BEGIN!!. Delete users from group outside terraform")
+		api, _ := getTestConnection()
+		err := api.updateGroupMembers(name, baseOU, userBase, users, []string{}, false)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Info("!!!END!!!. Delete users from group outside terraform")
+	}
+}
 
 func TestAccADGroup_basic(t *testing.T) {
 	baseOU := strings.ToLower(os.Getenv("AD_TEST_BASE_OU"))
@@ -57,7 +83,7 @@ func TestAccADGroup_basic(t *testing.T) {
 		CheckDestroy:      testAccCheckADGroupDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceADGroupTestData(baseOU, name, description, userBase, []string{},false),
+				Config: testAccResourceADGroupTestData(baseOU, name, description, userBase, []string{}, false, "universal", "distribution"),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
 					testAccCheckADGroupAttributes(&groupObject, baseOU, name, description),
@@ -65,6 +91,8 @@ func TestAccADGroup_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "name", name),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "description", description),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "id", fmt.Sprintf("cn=%s,%s", name, baseOU)),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "scope", "universal"),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "category", "distribution"),
 				),
 			},
 		},
@@ -88,7 +116,7 @@ func TestAccADGroup_update(t *testing.T) {
 		CheckDestroy:      testAccCheckADOUDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccResourceADGroupTestData(baseOU, name, description, userBase, []string{},false),
+				Config: testAccResourceADGroupTestData(baseOU, name, description, userBase, []string{}, false, "universal", "distribution"),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
 					testAccCheckADGroupAttributes(&groupObject, baseOU, name, description),
@@ -96,10 +124,12 @@ func TestAccADGroup_update(t *testing.T) {
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "name", name),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "description", description),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "id", fmt.Sprintf("cn=%s,%s", name, baseOU)),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "scope", "universal"),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "category", "distribution"),
 				),
 			},
 			{
-				Config: testAccResourceADGroupTestData(baseOU, updatedName, updatedDescription, userBase,[]string{}, false),
+				Config: testAccResourceADGroupTestData(baseOU, updatedName, updatedDescription, userBase, []string{}, false, "universal", "distribution"),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
 					testAccCheckADGroupAttributes(&groupObject, baseOU, updatedName, updatedDescription),
@@ -107,11 +137,11 @@ func TestAccADGroup_update(t *testing.T) {
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "name", updatedName),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "description", updatedDescription),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "id", fmt.Sprintf("cn=%s,%s", updatedName, baseOU)),
-
 				),
+				//ExpectNonEmptyPlan: true,
 			},
 			{
-				Config: testAccResourceADGroupTestData(baseOU, updatedName, updatedDescription, userBase, []string{},false),
+				Config: testAccResourceADGroupTestData(baseOU, updatedName, updatedDescription, userBase, []string{}, false, "universal", "distribution"),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
 					testAccCheckADGroupAttributes(&groupObject, baseOU, updatedName, updatedDescription),
@@ -119,8 +149,52 @@ func TestAccADGroup_update(t *testing.T) {
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "name", updatedName),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "description", updatedDescription),
 					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "id", fmt.Sprintf("cn=%s,%s", updatedName, baseOU)),
-
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "scope", "universal"),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "category", "distribution"),
 				),
+				//ExpectNonEmptyPlan: false,
+			},
+		},
+	})
+}
+
+func TestAccADGroup_updateGroupType(t *testing.T) {
+	baseOU := strings.ToLower(os.Getenv("AD_TEST_BASE_OU"))
+	userBase := strings.ToLower(os.Getenv("AD_TEST_USER_BASE"))
+	name := strings.ToLower(fmt.Sprintf("testacc_%s", getRandomString(3)))
+	description := getRandomString(10)
+
+	var groupObject Group
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheckGroup(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckADOUDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccResourceADGroupTestData(baseOU, name, description, userBase, []string{}, false, "global", "distribution"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
+					testAccCheckADGroupAttributes(&groupObject, baseOU, name, description),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "base_ou", baseOU),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "name", name),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "description", description),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "id", fmt.Sprintf("cn=%s,%s", name, baseOU)),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "scope", "global"),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "category", "distribution"),
+				),
+			},
+			{
+				Config: testAccResourceADGroupTestData(baseOU, name, description, userBase, []string{}, false, "domainlocal", "security"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckADGroupExists(ResourcesNameGroup+".test", &groupObject),
+					testAccCheckADGroupAttributes(&groupObject, baseOU, name, description),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "base_ou", baseOU),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "id", fmt.Sprintf("cn=%s,%s", name, baseOU)),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "scope", "domainlocal"),
+					resource.TestCheckResourceAttr(ResourcesNameGroup+".test", "category", "security"),
+				),
+				//ExpectNonEmptyPlan: true,
 			},
 		},
 	})
@@ -207,6 +281,51 @@ func testAccCheckADGroupExists(resourceName string, group *Group) resource.TestC
 		return nil
 	}
 }
+func testAccCheckADGroupMembers(resourceName string, g *Group, users []string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("not found: %s", resourceName)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("AD group ID is not set")
+		}
+		if rs.Primary.Attributes["member.0"] != users[0] {
+			return fmt.Errorf("Member in AD group is not set")
+		}
+		api, err := getTestConnection()
+		if err != nil {
+			return err
+		}
+		tmpGroup, err := api.getGroup(rs.Primary.Attributes["name"],
+			rs.Primary.Attributes["base_ou"],
+			rs.Primary.Attributes["user_base"],
+			[]string{},
+			false)
+		if tmpGroup == nil {
+			return fmt.Errorf("Group not found")
+		}
+		ok = false
+		for _, user := range tmpGroup.member {
+			for _, value := range rs.Primary.Attributes {
+				if value == user {
+					ok = true
+				}
+			}
+		}
+		if ok != true {
+			return fmt.Errorf("Some users not found in active directory")
+		}
+		if err != nil {
+			return err
+		}
+
+		*g = *tmpGroup
+		return nil
+	}
+
+}
 
 func testAccCheckADGroupAttributes(groupObject *Group, ou, name, description string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
@@ -226,9 +345,8 @@ func testAccCheckADGroupAttributes(groupObject *Group, ou, name, description str
 	}
 }
 
-// acceptance test data
-func testAccResourceADGroupTestData(ou, name, description, userBase string, users []string, ignoreMembersUnknownByTerraform bool) string {
-	usersString := fmt.Sprintf("[ %s ]", strings.Join(users, ","))
+func testAccResourceADGroupTestData(ou, name, description, userBase string, users []string, ignoreMembersUnknownByTerraform bool, scope string, category string) string {
+	usersString, _ := json.Marshal(users)
 	return fmt.Sprintf(`
 %s
 
@@ -239,9 +357,11 @@ resource "%s" "test" {
     user_base    					= "%s"
 	member 		 					=  %s
     ignore_members_unknown_by_terraform = %t
+    scope                           = "%s"
+    category                        = "%s"
 }
 	`,
-		TerraformProviderRequestSection(), ResourcesNameGroup, ou, name, description, userBase, usersString, ignoreMembersUnknownByTerraform,
+		TerraformProviderRequestSection(), ResourcesNameGroup, ou, name, description, userBase, usersString, ignoreMembersUnknownByTerraform, scope, category,
 	)
 }
 
@@ -269,6 +389,12 @@ func TestResourceADGroupObject(t *testing.T) {
 		assert.Equal(t, schema.TypeBool, response.Schema["ignore_members_unknown_by_terraform"].Type)
 		assert.Equal(t, false, response.Schema["ignore_members_unknown_by_terraform"].Required)
 
+		assert.Equal(t, schema.TypeString, response.Schema["scope"].Type)
+		assert.Equal(t, false, response.Schema["scope"].Required)
+
+		assert.Equal(t, schema.TypeString, response.Schema["category"].Type)
+		assert.Equal(t, false, response.Schema["category"].Required)
+
 	})
 }
 
@@ -283,6 +409,7 @@ func TestResourceADGroupObjectCreate(t *testing.T) {
 		dn:          fmt.Sprintf("cn=%s,%s", name, ou),
 		description: description,
 		member:      member,
+		groupType:   toGroupType("universal", "security"),
 	}
 
 	resourceSchema := resourceADGroupObject().Schema
@@ -296,7 +423,7 @@ func TestResourceADGroupObjectCreate(t *testing.T) {
 	t.Run("resourceADGroupObjectCreate - should return nil when everything is good", func(t *testing.T) {
 		api := new(MockAPIInterface)
 		api.On("createGroup", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-			mock.Anything).Return(nil)
+			mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		api.On("getGroup", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 			mock.Anything).Return(testGroup, nil)
 
@@ -309,7 +436,7 @@ func TestResourceADGroupObjectCreate(t *testing.T) {
 	t.Run("resourceADGroupObjectCreate - should return error when creating failed", func(t *testing.T) {
 		api := new(MockAPIInterface)
 		api.On("createGroup", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-			mock.Anything).Return(fmt.Errorf("error"))
+			mock.Anything, mock.Anything, mock.Anything).Return(fmt.Errorf("error"))
 
 		resourceLocalData := schema.TestResourceDataRaw(t, resourceSchema, resourceDataMap)
 		diags := resourceADGroupObjectCreate(nil, resourceLocalData, api)
@@ -320,7 +447,7 @@ func TestResourceADGroupObjectCreate(t *testing.T) {
 	t.Run("resourceADGroupObjectCreate - id should be set to dn", func(t *testing.T) {
 		api := new(MockAPIInterface)
 		api.On("createGroup", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-			mock.Anything).Return(nil)
+			mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		api.On("renameGroup", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 		api.On("getGroup", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 			mock.Anything).Return(testGroup, nil)

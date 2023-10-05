@@ -2,6 +2,7 @@ package activedirectory
 
 import (
 	"fmt"
+	mockldap "github.com/mrjacek/terraform-provider-activedirectory/mocks/github.com/go-ldap/ldap/v3"
 	"strings"
 	"testing"
 
@@ -10,15 +11,20 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-//
 func TestGetGroup(t *testing.T) {
 	numberOfObjects := 1
-	attributes := []string{"cn", "name", "member", "sAMAccountName", "description"}
+	attributes := map[string]func() string{
+		"cn":             func() string { return getRandomString(10) },
+		"name":           func() string { return getRandomString(10) },
+		"member":         func() string { return getRandomString(10) },
+		"sAMAccountName": func() string { return getRandomString(10) },
+		"description":    func() string { return getRandomString(10) },
+		"groupType":      func() string { return toGroupType("universal", "security") }} //"-2147483640"
 	result := createADResult(numberOfObjects, attributes)
 
 	fmt.Println(result)
 	t.Run("getGroup - should forward errors from api.getObject", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -30,7 +36,7 @@ func TestGetGroup(t *testing.T) {
 	})
 
 	t.Run("getGroup - should return nil when no ou was found", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, &ldap.Error{Err: fmt.Errorf("not found"), ResultCode: 32})
 
 		api := &API{client: mockClient}
@@ -42,7 +48,7 @@ func TestGetGroup(t *testing.T) {
 	})
 
 	t.Run("getGroup - should return group object", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(result, nil)
 
 		api := &API{client: mockClient}
@@ -56,7 +62,7 @@ func TestGetGroup(t *testing.T) {
 
 	//
 	t.Run("getGroup - should error when more than one object is found", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(2, attributes), nil)
 
 		api := &API{client: mockClient}
@@ -69,7 +75,7 @@ func TestGetGroup(t *testing.T) {
 
 	//
 	t.Run("getGroup - should return nil when api.client.Search returns nil", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, nil)
 
 		api := &API{client: mockClient}
@@ -81,7 +87,7 @@ func TestGetGroup(t *testing.T) {
 	})
 
 	t.Run("getGroup - should return nil when api.client.Search returns 0 objects", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(0, attributes), nil)
 
 		api := &API{client: mockClient}
@@ -94,34 +100,46 @@ func TestGetGroup(t *testing.T) {
 }
 
 func TestCreateGroup(t *testing.T) {
-	attributes := []string{"cn", "name", "member", "sAMAccountName", "description"}
+	attributes := map[string]func() string{
+		"cn":             func() string { return getRandomString(10) },
+		"name":           func() string { return getRandomString(10) },
+		"member":         func() string { return getRandomString(10) },
+		"sAMAccountName": func() string { return getRandomString(10) },
+		"description":    func() string { return getRandomString(10) },
+		"groupType":      func() string { return "-2147483640" }}
 
 	t.Run("createGroup - should forward errors from api.client.Search", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
 
-		err := api.createGroup("", "", "", "", []string{}, true)
+		err := api.createGroup("", "", "", "", []string{}, true, "global", "security")
 		assert.Error(t, err)
 	})
 
 	t.Run("createGroup- should error when ou already exists in another place", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(1, attributes), nil)
 
 		api := &API{client: mockClient}
 
-		err := api.createGroup("", "", "", "", []string{}, true)
+		err := api.createGroup("", "", "", "", []string{}, true, "global", "security")
 		assert.Error(t, err)
 	})
 }
 
 func TestMoveGroup(t *testing.T) {
-	attributes := []string{"name", "description", "member"}
+	attributes := map[string]func() string{
+		"cn":             func() string { return getRandomString(10) },
+		"name":           func() string { return getRandomString(10) },
+		"member":         func() string { return getRandomString(10) },
+		"sAMAccountName": func() string { return getRandomString(10) },
+		"description":    func() string { return getRandomString(10) },
+		"groupType":      func() string { return "-2147483640" }}
 
 	t.Run("moveGroup - should forward error from ldap.Client.Search", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -130,7 +148,7 @@ func TestMoveGroup(t *testing.T) {
 	})
 
 	t.Run("moveGroup - should error when group was not found", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, nil)
 
 		api := &API{client: mockClient}
@@ -141,7 +159,7 @@ func TestMoveGroup(t *testing.T) {
 	t.Run("moveGroup - should forward error from ldap.Client.ModifyDN", func(t *testing.T) {
 		res := createADResult(1, attributes)
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(res, nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -153,7 +171,7 @@ func TestMoveGroup(t *testing.T) {
 	t.Run("moveGroup - should return nil when ou was updated", func(t *testing.T) {
 		res := createADResult(1, attributes)
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(res, nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(nil)
 
@@ -174,7 +192,7 @@ func TestMoveGroup(t *testing.T) {
 				sr.NewSuperior == newOU && sr.NewRDN == fmt.Sprintf("cn=%s", cn)
 		}
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(res, nil)
 		mockClient.On("ModifyDN", mock.MatchedBy(matchFunc)).Return(nil)
 
@@ -191,7 +209,7 @@ func TestMoveGroup(t *testing.T) {
 		newOU := fmt.Sprintf("ou=%s,%s", getRandomString(10), oldOU)
 		res.Entries[0].DN = fmt.Sprintf("cn=%s,%s", cn, newOU)
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(res, nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -202,10 +220,12 @@ func TestMoveGroup(t *testing.T) {
 }
 
 func TestUpdateGroupDescription(t *testing.T) {
-	attributes := []string{"name", "description"}
+	attributes := map[string]func() string{
+		"name":        func() string { return getRandomString(10) },
+		"description": func() string { return getRandomString(10) }}
 
 	t.Run("updateGroupDescription - should forward error from ldap.client.Modify", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(1, attributes), nil)
 		mockClient.On("Modify", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -216,7 +236,7 @@ func TestUpdateGroupDescription(t *testing.T) {
 	})
 
 	t.Run("updateGroupDescription - should return nil when ou was updated successfully", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(1, attributes), nil)
 		mockClient.On("Modify", mock.Anything).Return(nil)
 
@@ -237,7 +257,7 @@ func TestUpdateGroupDescription(t *testing.T) {
 			return false
 		}
 
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(1, attributes), nil)
 		mockClient.On("Modify", mock.MatchedBy(matchFunc)).Return(nil)
 
@@ -249,12 +269,15 @@ func TestUpdateGroupDescription(t *testing.T) {
 	})
 }
 
-//
 func TestUpdateGroupName(t *testing.T) {
-	attributes := []string{"name", "description", "sAMAccountName"}
+	attributes := map[string]func() string{
+		"name":           func() string { return getRandomString(10) },
+		"sAMAccountName": func() string { return getRandomString(10) },
+		"description":    func() string { return getRandomString(10) },
+	}
 
 	t.Run("renameGroup - should forward error from ldap.Client.Search", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -263,7 +286,7 @@ func TestUpdateGroupName(t *testing.T) {
 	})
 
 	t.Run("renameGroup - should error when ou was not found", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, nil)
 
 		api := &API{client: mockClient}
@@ -272,7 +295,7 @@ func TestUpdateGroupName(t *testing.T) {
 	})
 
 	t.Run("renameGroup - should forward error from ldap.client.ModifyDN", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(1, attributes), nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -283,7 +306,7 @@ func TestUpdateGroupName(t *testing.T) {
 	})
 
 	t.Run("renameGroup - should return nil when ou was updated successfully", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(createADResult(1, attributes), nil)
 		mockClient.On("ModifyDN", mock.Anything).Return(nil)
 		mockClient.On("Modify", mock.Anything).Return(nil)
@@ -298,7 +321,7 @@ func TestUpdateGroupName(t *testing.T) {
 func TestUpdateMemberGroup(t *testing.T) {
 
 	t.Run("updateGroupMembers - should forward error from api.searchObject", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -315,10 +338,10 @@ func TestUpdateMemberGroup(t *testing.T) {
 	userDN := fmt.Sprintf("cn=%s,%s", userName, userBase)
 	userADResult := createADResultForUsers([]string{userName}, userBase)
 	members := make([][]string, 1)
-	groupADResult := createADResultForGroups([]string{groupName}, groupBase, members, userBase)
+	groupADResult := createADResultForGroups([]string{groupName}, groupBase, members, userBase, "global", "security")
 
 	t.Run("updateGroupMembers - should call Modify with add one member", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 
 		mockClient.On("Search", mock.MatchedBy(func(sr *ldap.SearchRequest) bool {
 			return sr.Filter == fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", groupName)
@@ -347,7 +370,7 @@ func TestUpdateMemberGroup(t *testing.T) {
 	userDN2 := fmt.Sprintf("cn=%s,%s", userName2, userBase)
 	userADResult = createADResultForUsers([]string{userName, userName2}, userBase)
 	t.Run("updateGroupMembers - should call Modify with add two member", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 
 		mockClient.On("Search", mock.MatchedBy(func(sr *ldap.SearchRequest) bool {
 			return sr.Filter == fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", groupName)
@@ -380,11 +403,11 @@ func TestUpdateMemberGroup(t *testing.T) {
 
 	members = make([][]string, 1)
 	members[0] = []string{userName}
-	groupADResult = createADResultForGroups([]string{groupName}, groupBase, members, userBase)
+	groupADResult = createADResultForGroups([]string{groupName}, groupBase, members, userBase, "global", "security")
 	userADResult = createADResultForUsers([]string{userName}, userBase)
 
 	t.Run("updateGroupMembers - should not call Modify when user already in group", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 
 		mockClient.On("Search", mock.MatchedBy(func(sr *ldap.SearchRequest) bool {
 			return sr.Filter == fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", groupName)
@@ -403,7 +426,7 @@ func TestUpdateMemberGroup(t *testing.T) {
 		assert.NoError(t, err)
 	})
 	t.Run("updateGroupMembers - should call Modify with Delete member", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 
 		mockClient.On("Search", mock.MatchedBy(func(sr *ldap.SearchRequest) bool {
 			return sr.Filter == fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", groupName)
@@ -431,7 +454,7 @@ func TestUpdateMemberGroup(t *testing.T) {
 
 	userADResult2 := createADResultForUsers([]string{userName2}, userBase)
 	t.Run("updateGroupMembers - should call Modify with Delete member and Add member", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 
 		mockClient.On("Search", mock.MatchedBy(func(sr *ldap.SearchRequest) bool {
 			return sr.Filter == fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", groupName)
@@ -465,7 +488,7 @@ func TestUpdateMemberGroup(t *testing.T) {
 	})
 
 	t.Run("updateGroupMembers - should not call Modify because ignoreMembersUnknownByTerraform flag was set", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 
 		mockClient.On("Search", mock.MatchedBy(func(sr *ldap.SearchRequest) bool {
 			return sr.Filter == fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", groupName)
@@ -484,7 +507,7 @@ func TestUpdateMemberGroup(t *testing.T) {
 		assert.NoError(t, err)
 	})
 	t.Run("updateGroupMembers - should  call Modify with Delete member because ignoreMembersUnknownByTerraform flag was not set", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 
 		mockClient.On("Search", mock.MatchedBy(func(sr *ldap.SearchRequest) bool {
 			return sr.Filter == fmt.Sprintf("(&(objectclass=group)(sAMAccountName=%s))", groupName)
@@ -513,11 +536,15 @@ func TestUpdateMemberGroup(t *testing.T) {
 
 func TestDeleteGroup(t *testing.T) {
 	numberOfObjects := 1
-	attributes := []string{"name", "sAMAccountName", "description"}
+	attributes := map[string]func() string{
+		"name":           func() string { return getRandomString(10) },
+		"sAMAccountName": func() string { return getRandomString(10) },
+		"description":    func() string { return getRandomString(10) },
+	}
 	searchResult := createADResult(numberOfObjects, attributes)
 
 	t.Run("deleteGroup - should forward error from api.searchObject", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, fmt.Errorf("error"))
 
 		api := &API{client: mockClient}
@@ -527,7 +554,7 @@ func TestDeleteGroup(t *testing.T) {
 	})
 
 	t.Run("deleteGroup - should forward error from api.deleteObject", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(searchResult, nil)
 		mockClient.On("Del", mock.Anything).Return(fmt.Errorf("error"))
 
@@ -538,7 +565,7 @@ func TestDeleteGroup(t *testing.T) {
 	})
 
 	t.Run("deleteGroup - should return nil when object is deleted successfully", func(t *testing.T) {
-		mockClient := new(MockClient)
+		mockClient := new(mockldap.MockClient)
 		mockClient.On("Search", mock.Anything).Return(nil, nil)
 		mockClient.On("Del", mock.Anything).Return(nil)
 

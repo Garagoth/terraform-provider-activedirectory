@@ -37,13 +37,13 @@ func (_m *MockAPIInterface) createComputer(cn string, ou string, description str
 	return r0
 }
 
-// createGroup provides a mock function with given fields: name, baseOU, description, userBase, member, ignoreMembersUnknownByTerraform
-func (_m *MockAPIInterface) createGroup(name string, baseOU string, description string, userBase string, member []string, ignoreMembersUnknownByTerraform bool) error {
-	ret := _m.Called(name, baseOU, description, userBase, member, ignoreMembersUnknownByTerraform)
+// createGroup provides a mock function with given fields: name, baseOU, description, userBase, member, ignoreMembersUnknownByTerraform, scope, category
+func (_m *MockAPIInterface) createGroup(name string, baseOU string, description string, userBase string, member []string, ignoreMembersUnknownByTerraform bool, scope string, category string) error {
+	ret := _m.Called(name, baseOU, description, userBase, member, ignoreMembersUnknownByTerraform, scope, category)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(string, string, string, string, []string, bool) error); ok {
-		r0 = rf(name, baseOU, description, userBase, member, ignoreMembersUnknownByTerraform)
+	if rf, ok := ret.Get(0).(func(string, string, string, string, []string, bool, string, string) error); ok {
+		r0 = rf(name, baseOU, description, userBase, member, ignoreMembersUnknownByTerraform, scope, category)
 	} else {
 		r0 = ret.Error(0)
 	}
