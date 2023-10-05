@@ -29,6 +29,7 @@ layout: default
 This is a community-driven Terraform provider for Microsoft Active Directory. The following Active Directory object types are currently supported:
 * computer
 * organizational unit
+* group
 
 More Active Directory resources are planned. Please feel free to contribute.
 
@@ -65,6 +66,21 @@ resource "activedirectory_ou" "test_ou" {
   name           = "TerraformOU"                            # can be updated
   base_ou        = "OU=Test,CN=Computers,DC=example,DC=org" # can be updated
   description    = "terraform sample ou"                    # can be updated
+}
+
+# Create Active Directory group and add (existing) members to it
+resource "activedirectory_group" "test_group" {
+  name        = "TerraformGroup"                                # can be update
+  base_ou     = "OU=TerraformGroupOU,OU=Test,DC=example,DC=org" # can be update
+  user_base   = "OU=Users,DC=example,DC=org"                    # can be update
+  description = "Some description"                              # can be update
+  member = [                                                    # can be update, users by sAMAccountName
+    "testuser",
+    "othertestuser"
+  ]
+  ignore_members_unknown_by_terraform = false # can be update ( if false remove from group users unknown by terraform )
+  scope = "domainlocal"                                         # update will force re-create
+  category = "security"                                         # update will force re-create
 }
 ```
 <sup>[back to top](#top)</sup>

@@ -8,6 +8,6 @@ resource "activedirectory_group" "test_group" {
     "othertestuser"
   ]
   ignore_members_unknown_by_terraform = false # can be update ( if false remove from group users unknown by terraform )
-  scope = "domainlocal"
-  category = "security"
+  scope = "domainlocal"                                         # update will force re-create
+  category = "security"                                         # update will force re-create
 }
